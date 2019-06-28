@@ -114,15 +114,15 @@ class ChargingControlNode(object):
     def cbMaintenanceState(self, msg):
 
         # Start timer which calls Duckiebot back to charger after charge_time mins
-        '''
-        if msg.state == "WAY_TO_MAINTENANCE" or msg.state == "WAY_TO_CHARGING" :
-            #rospy.loginfo("["+self.node_name+"]drive_timer will shutdown.") 
+        
+        if msg.state == "WAY_TO_MAINTENANCE" or msg.state != self.maintenance_state :
+            rospy.loginfo("["+self.node_name+"]drive_timer will shutdown.") 
             self.drive_timer.shutdown()
         
         if self.maintenance_state == "WAY_TO_CITY" and msg.state != self.maintenance_state:
             self.drive_timer = rospy.Timer(rospy.Duration.from_sec(60*self.drive_time), self.goToCharger, oneshot=True)
             rospy.loginfo("["+self.node_name+"]Timer is on, I will come back to MAINTENANCE_AREA in "+str(60*self.drive_time)) 
-        '''
+        
 
         self.maintenance_state = msg.state
 
