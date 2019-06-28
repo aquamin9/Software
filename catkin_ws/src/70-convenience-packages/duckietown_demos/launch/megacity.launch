@@ -28,13 +28,13 @@
 		<arg name="LED" value="true"/>
 		<arg name="/LED/detector" value="true"/>
 		<arg name="intersectionType" value="trafficLight"/>
-		<arg name="use_priority_protocol" value= "true"/> 
+		<arg name="use_priority_protocol" value= "true"/>
 		<!-- Charging control enabled for Megacity -->
 		<arg name="charging_control" value="true"/>
 		<arg name="maintenance_control" value="true"/>
 		<arg name="fleet_planning" value="true"/>
 
-    <arg name="tcp_communication" value="true"/>
+    <arg name="tcp_communication" value="false"/>
 		<arg name="auto_calibration" value="true"/>
 
 	</include>

@@ -21,6 +21,7 @@ class State:
     INTERSECTION_CONTROL = 'INTERSECTION_CONTROL'
     AT_STOP_CLEARING_AND_PRIORITY = 'AT_STOP_CLEARING_AND_PRIORITY'
     SACRIFICE_FOR_PRIORITY = 'SACRIFICE_FOR_PRIORITY'
+    AT_MT_INTERSECTION = 'AT_MT_INTERSECTION'
 
 class VehicleCoordinator():
     """The Vehicle Coordination Module for Duckiebot"""
@@ -31,6 +32,7 @@ class VehicleCoordinator():
     T_UNKNOWN = 1.0    # seconds
     T_MIN_RANDOM = 2.0 # seconds
     T_KEEP_CALM = 4.0  # seconds
+    T_WAIT_MT_INT = 15.0 #seconds
 
 
     def __init__(self):
@@ -47,6 +49,12 @@ class VehicleCoordinator():
         self.last_state_transition = time()
         self.random_delay = 0
         self.priority = False
+        self.MT_INTERSECTION = False
+        self.veh = rospy.get_param("/veh")
+        self.param_name_MT = "/"+str(self.veh)+"/maintenance_control_node/maintenance_intersection/tag"
+
+        self.detection_completed = False
+
 
         # Node name
         self.node_name = rospy.get_name()
@@ -80,6 +88,7 @@ class VehicleCoordinator():
         rospy.Subscriber('~apriltags_out', AprilTagsWithInfos, self.set_traffic_light)
         rospy.Subscriber('~signals_detection', SignalsDetection, self.process_signals_detection)
         rospy.Subscriber("~maintenance_state", MaintenanceState, self.cbMaintenanceState)
+        self.sub_det_completed = rospy.Subscriber("~timer_off",BoolStamped,self.cbTimerOff)
 
         # Initialize clearance to go
         self.clearance_to_go = CoordinationClearance.NA
@@ -93,6 +102,7 @@ class VehicleCoordinator():
         self.pub_coord_cmd          = rospy.Publisher('~car_cmd', Twist2DStamped, queue_size=1)
         self.roof_light_pub         = rospy.Publisher('~change_color_pattern', String, queue_size=10)
         self.coordination_state_pub = rospy.Publisher('~coordination_state', String, queue_size=10)
+        self.pub_at_MT_intersection = rospy.Publisher("~at_MT_intersection", BoolStamped, queue_size = 1)
 
         #Update param timer
         rospy.Timer(rospy.Duration.from_sec(1.0), self.updateParams)
@@ -101,8 +111,16 @@ class VehicleCoordinator():
         while not rospy.is_shutdown():
             self.loop()
             rospy.sleep(0.1)
+    def cbTimerOff(self,msg):
+        if msg.data :
+            self.detection_completed = True
 
     def cbMaintenanceState(self, msg):
+        if msg.state == "WAY_TO_MAINTENANCE" or msg.state == "NONE":
+            self.MT_INTERSECTION = False
+            self.detection_completed = False
+
+
         if msg.state == "WAY_TO_MAINTENANCE" and self.use_priority_protocol:
             self.priority = True
             rospy.loginfo('[%s] Granted priority rights on intersections!' %(self.node_name))
@@ -115,14 +133,24 @@ class VehicleCoordinator():
         # New traffic light
         # TODO: only consider two closest signs
         for item in msg.infos:
+            if str(item.id) == str(self.MT_TAG) and not self.MT_INTERSECTION and not self.detection_completed :
+                self.MT_INTERSECTION = True
+                break
+
             if item.traffic_sign_type == 17:
                 self.traffic_light_intersection = True
                 break
             else:
                 self.traffic_light_intersection = False
         # If different from the one before, restart from lane following
+
+
         if traffic_light_old != self.traffic_light_intersection:
             self.set_state(State.INTERSECTION_PLANNING)
+        if self.MT_INTERSECTION and not self.detection_completed :
+            self.set_state(State.AT_MT_INTERSECTION)
+
+
 
         # Print result
         # if self.traffic_light_intersection != UNKNOWN:
@@ -163,6 +191,10 @@ class VehicleCoordinator():
             self.roof_light = CoordinationSignal.SIGNAL_GREEN
         elif self.state == State.INTERSECTION_PLANNING or self.state == State.TL_SENSING:
             self.roof_light = CoordinationSignal.OFF
+        elif self.state == State.AT_MT_INTERSECTION :
+            self.roof_light = CoordinationSignal.OFF
+
+
 
     #    rospy.logdebug('[coordination_node] Transitioned to state' + self.state)
 
@@ -347,6 +379,17 @@ class VehicleCoordinator():
                     self.set_state(State.AT_STOP_CLEARING_AND_PRIORITY)
                 else:
                     self.set_state(State.AT_STOP_CLEARING)
+        elif self.state == State.AT_MT_INTERSECTION :
+
+            if self.time_at_current_state() > self.T_WAIT_MT_INT :
+                if self.mode == 'WAIT':
+                    self.set_state(State.AT_MT_INTERSECTION)
+                    self.pub_at_MT_intersection.publish(data = False)
+                elif self.mode == 'INTERSECTION_COORDINATION':
+                    self.pub_at_MT_intersection.publish(data = False)
+                    self.set_state(State.INTERSECTION_PLANNING)
+            elif self.time_at_current_state() <= 1.0 :
+                self.pub_at_MT_intersection.publish(data = True)
 
 
         # If not GO, pusblish wait
@@ -361,6 +404,7 @@ class VehicleCoordinator():
 
     def updateParams(self, event):
         self.tl_timeout = rospy.get_param("~tl_timeout")
+        self.MT_TAG = rospy.get_param(self.param_name_MT)
 
 
     # def onShutdown(self):
