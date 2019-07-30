@@ -4,7 +4,8 @@
   <version>1.0.0</version>
 
   <license>GPLv3</license>
-  <maintainer email="andera@student.ethz.ch">Ali</maintainer>
+  <maintainer email="andera@student.ethz.ch">Ali Ander</maintainer>
+  <maintainer email="zaluskat@student.ethz.ch">Tomasz Zaluska</maintainer>
 
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>duckietown_msgs</build_depend>
