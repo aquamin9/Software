@@ -2,10 +2,9 @@
 <package>
   <name>charging_manager_module1</name>
   <version>1.0.0</version>
-  <description>TODO: Add a description of package `traffic_light` in `package.xml`.</description>
 
   <license>GPLv3</license>
-  <maintainer email="mack@duckietown.org">Mack</maintainer>
+  <maintainer email="andera@student.ethz.ch">Ali</maintainer>
 
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>duckietown_msgs</build_depend>
