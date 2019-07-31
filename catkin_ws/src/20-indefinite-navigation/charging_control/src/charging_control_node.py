@@ -1,8 +1,10 @@
 #!/usr/bin/env python
+from rgb_led import *
+from rgb_led import RGB_LED
 import rospy
 import numpy as np
 from duckietown_msgs.msg import SegmentList, Segment, BoolStamped, StopLineReading, LanePose, FSMState, AprilTagsWithInfos, TurnIDandType, MaintenanceState, Twist2DStamped
-from std_msgs.msg import Float32, Int16, Bool
+from std_msgs.msg import Float32, Int8, Int16, Bool, String
 from geometry_msgs.msg import Point
 import time
 import math
@@ -19,13 +21,39 @@ class ChargingControlNode(object):
         ## setup Parameters
         self.setupParams()
 
+        #COLORS 
+        self.yellow = [1,1,0]
+        self.blue = [0,0,1]
+        self.black = [0,0,0]
+
+        #Initialize an RGB_LED object  
+        self.led = RGB_LED()
+
+        #Initialize the reference time
+        self.reference_time = 0.0
+
+        #The position_state variable is obtained by 
+        #i2cget -y 1 REGISTER_ADDRESS ARRAY_INDEX 
+        #It is a vital feedback for wiggling
+        #The output of this command is mapped into some states:
+        #
+        #0,2,6  :UNKNOWN_STATE
+        #1      :STANDING_STILL
+        #3      :MOVING
+        #4,5    :STANDING_STILL_AND_CHARGING
+        #7      :MOVING_AND_CHARGING
+        self.position_state = 1 #STANDING STILL
 
         # Class variables
         self.ready2go = False # Whether the bot is fully charged or not
         self.notChargingCounter = 0
         self.T_check_charging = 4
         self.time_until_wiggle = 24
+        self.vehicle_seen = False
+
+        #REGISTER_ADDRESS
         self.i2c_addr = 0x42
+        #ARRAY_INDEX 
         self.state_reg = 1
 
         self.maintenance_state = "NONE"
@@ -33,10 +61,12 @@ class ChargingControlNode(object):
 
 
         ## Subscribers
-        self.sub_fsm_state = rospy.Subscriber("~fsm_state", FSMState, self.cbFSMState)
         self.sub_mt_state = rospy.Subscriber("~maintenance_state", MaintenanceState, self.cbMaintenanceState)
-        self.sub_stop_line = rospy.Subscriber("~at_stop_line", BoolStamped, self.cbStopLine)
+        #self.sub_stop_line = rospy.Subscriber("~at_stop_line", BoolStamped, self.cbStopLine)
         self.sub_ready2go = rospy.Subscriber("~ready2go", Bool, self.setReady2Go)
+        self.sub_vehicle_detection = rospy.Subscriber("~vehicle_detected", BoolStamped, self.cbVehicleSeen)
+        self.sub_fsm_state = rospy.Subscriber("~fsm_state", FSMState, self.cbFSMState)
+
 
         ## Publishers
         self.ready_at_exit = rospy.Publisher("~ready_at_exit", BoolStamped, queue_size=1)
@@ -44,47 +74,69 @@ class ChargingControlNode(object):
         self.pub_go_mt_full = rospy.Publisher("~go_mt_full", Bool, queue_size=1)
         self.pub_car_cmd = rospy.Publisher("~car_cmd", Twist2DStamped, queue_size=1)
 
+
+        
+
         # State to int mappings
         self.positionStates = {'UNKNOWN_STATE': [0,2,6], 'STANDING_STILL': [1], 'MOVING': [3], 'STANDING_STILL_AND_CHARGING': [4,5], 'MOVING_AND_CHARGING': [7]}
+        
         ## update Parameters timer
         self.params_update = rospy.Timer(rospy.Duration.from_sec(1.0), self.updateParams)
 
-        ## wiggle-operation to obtain good conact if not charging
+        ## update ready_at_exit 
+        self.timer_ready_at_exit = rospy.Timer(rospy.Duration.from_sec(1.0), self.TimerReadyAtExit)
+
+        ## wiggle-operation to obtain good contact if not charging
         self.wiggle_timer = rospy.Timer(rospy.Duration.from_sec(self.T_check_charging), self.checkIfCharging)
 
         # Assume the Duckiebot is full at startup, let him drive to charger after drive_time minutes
-        self.drive_timer = rospy.Timer(rospy.Duration.from_sec(60*self.drive_time), self.goToCharger, oneshot=True)
-
-
+        self.drive_timer = rospy.Timer(rospy.Duration.from_sec(60), self.goToCharger, oneshot=True)
+        #rospy.loginfo("["+self.node_name+"]After "+str(60*self.drive_time)+" seconds I am going to go to the MAINTENANCE_AREA")
+        #self.pub_go_mt_charging.publish(data=True)
     ##### BEGIN callback functions #####
+    #Gets the information on vehicle detection 
+    def cbVehicleSeen(self,msg):
+        self.vehicle_seen = msg.data
 
-    # If Duckiebot first in charger and ready2go, leave charger
-    def cbStopLine(self, msg):
-        if self.state == "CHARGING_FIRST_IN_LINE" and msg.data and self.ready2go:
+    # If Duckiebot first in charger and ready2go nad no vehicle is seen , leave charger
+    def TimerReadyAtExit(self,event):
+
+        if self.state == "CHARGING_FIRST_IN_LINE" and self.ready2go and not self.vehicle_seen:
+            #rospy.loginfo("["+self.node_name+"]Publishing ready")
             self.pubReady(True)
+        
+        else : 
+            if( self.state != "NORMAL_JOYSTICK_CONTROL") or  (self.state != "JOYSTICK_CONTROL"):
+                self.pubReady(False)
+        
 
     # Callback maintenance state
     def cbMaintenanceState(self, msg):
 
-        if self.maintenance_state == "NONE" and msg.state == "WAY_TO_MAINTENANCE":
-            # Reserving a charging spot
-            self.reserveChargerSpot()
-
         # Start timer which calls Duckiebot back to charger after charge_time mins
-        if self.maintenance_state == "CHARGING" and msg.state != self.maintenance_state:
+        
+        if msg.state == "WAY_TO_MAINTENANCE" or msg.state != self.maintenance_state :
+            rospy.loginfo("["+self.node_name+"]drive_timer will shutdown.") 
+            self.drive_timer.shutdown()
+        
+        if self.maintenance_state == "WAY_TO_CITY" and msg.state != self.maintenance_state:
             self.drive_timer = rospy.Timer(rospy.Duration.from_sec(60*self.drive_time), self.goToCharger, oneshot=True)
+            rospy.loginfo("["+self.node_name+"]Timer is on, I will come back to MAINTENANCE_AREA in "+str(60*self.drive_time)) 
+        
 
         self.maintenance_state = msg.state
 
 
     # Callback on FSM changes
     def cbFSMState(self, state_msg):
-        # if we enter charging area, setup timer for leaving again
-        if state_msg.state == "IN_CHARGING_AREA" and self.state != state_msg.state:
+        if self.state != state_msg.state :
             self.ready2go = False
             self.pubReady(False)
-            self.charge_timer = rospy.Timer(rospy.Duration.from_sec(60*self.charge_time), self.setReady2Go, oneshot=True)
-
+            
+            # if we enter charging area, setup timer for leaving again
+            if state_msg.state == "IN_CHARGING_AREA" : 
+                self.reference_time = rospy.get_rostime().to_sec()
+                self.charge_timer = rospy.Timer(rospy.Duration.from_sec(60*self.charge_time-15), self.setReady2Go, oneshot=True)
         self.state = state_msg.state
 
     ##### END callback functions #####
@@ -93,54 +145,83 @@ class ChargingControlNode(object):
 
     # If we were supposed to charge but not charging for too long, do a small wiggle to get contact again
     def checkIfCharging(self,event):
+
         if self.state != "IN_CHARGING_AREA":
             self.notChargingCounter = 0
             return
 
         state_output = commands.getstatusoutput("i2cget -y 1 " + str(self.i2c_addr) + " " + str(self.state_reg))
+
         if state_output[0] != 0: return
 
         positionState = int(state_output[1], 0)
-
-        rospy.loginfo("State " + str(positionState))
-
-        if positionState not in (self.positionStates['STANDING_STILL_AND_CHARGING']+self.positionStates['MOVING_AND_CHARGING']):
+        #rospy.loginfo("["+self.node_name+"] positionState: " + str(positionState))
+        
+        if positionState not in self.positionStates['STANDING_STILL_AND_CHARGING'] and self.state == "IN_CHARGING_AREA" and self.maintenance_state =="CHARGING":
             self.notChargingCounter += 1
             if self.notChargingCounter*self.T_check_charging >= self.time_until_wiggle:
-                rospy.loginfo("[Charging Control Node]: We were not charging for too long, wiggling now.")
-                self.doWiggle()
+                #rospy.loginfo("[Charging Control Node]: We were not charging for too long, wiggling now.")
+                #self.doWiggle()
                 self.notChargingCounter = 0
         else:
             self.notChargingCounter = 0
 
 
+
     def doWiggle(self):
+        rospy.loginfo("["+self.node_name+"]"+"Wiggling now.")
+        #Turn the LEDs on the back bumper on when the Duckiebot wiggles 
+        self.led.setRGB(1,self.yellow)
+        self.led.setRGB(3,self.yellow)
+
         carmsg = Twist2DStamped()
-        carmsg.v = -0.3
-        carmsg.omega = 0
+        carmsg.v = -0.5
+        carmsg.omega = 0.5
         self.pub_car_cmd.publish(carmsg)
         rospy.sleep(0.1)
-        carmsg.v = 0.2
-        carmsg.omega = 0
+        carmsg.v = 0.5
+        carmsg.omega = -0.5
         self.pub_car_cmd.publish(carmsg)
         rospy.sleep(0.1)
         carmsg.v = 0.0
         carmsg.omega = 0
         self.pub_car_cmd.publish(carmsg)
+        rospy.sleep(0.5)
+
+        self.led.setRGB(1,self.black)
+        self.led.setRGB(3,self.black)
 
 
     def pubReady(self, ready):
+        if ready == True and not self.vehicle_seen :
+            rospy.loginfo("["+self.node_name+"]Duckiebot is ready to leave")
+            #move the bot forward a little bit 
+            carmsg = Twist2DStamped()
+            carmsg.v = 0.2
+            carmsg.omega = 0
+            self.pub_car_cmd.publish(carmsg)
+            rospy.sleep(0.6)
+            carmsg.v = 0.0
+            carmsg.omega = 0
+            self.pub_car_cmd.publish(carmsg)
+
         ready_at_exit_msg = BoolStamped()
         ready_at_exit_msg.data = ready
         self.ready_at_exit.publish(ready_at_exit_msg)
 
 
     # Set the status to: ready to leave charging area (battery full)
-    def setReady2Go(self, event):
+    def setReady2Go(self,event):
+        current_time = rospy.get_rostime().to_sec()
+        passed_time = current_time - self.reference_time
+        rospy.loginfo("["+self.node_name+"] "+str(passed_time)+" seconds passed, 15 seconds left. Switching on the LEDs on the back bumper!")
+        self.led.setRGB(1,self.blue)
+        self.led.setRGB(3,self.blue)
+        rospy.sleep(15.0)
+        self.led.setRGB(1,self.black)
+        self.led.setRGB(3,self.black)
         self.ready2go = True
-
-        rospy.loginfo("[Charing Control Node] Requesting the Duckiebot to leave the charger")
-        self.releaseChargerSpot()
+        rospy.loginfo("["+self.node_name+"]"+"Requesting the Duckiebot to leave the charger")
 
     # Request that Duckiebot should drive to maintenance area for charging
     def goToCharger(self, event):
@@ -148,43 +229,11 @@ class ChargingControlNode(object):
         go_to_charger.data = True
         if self.do_calib:
             self.pub_go_mt_full.publish(go_to_charger)
-            rospy.loginfo("[Charing Control Node] Requesting the Duckiebot to go charging and calibrating.")
+            rospy.loginfo("["+self.node_name+"]"+"Requesting the Duckiebot to go charging and calibrating.")
         else:
             self.pub_go_mt_charging.publish(go_to_charger)
-            rospy.loginfo("[Charing Control Node] Requesting the Duckiebot to go charging.")
+            rospy.loginfo("["+self.node_name+"]"+" Requesting the Duckiebot to go charging.")
 
-
-
-    def releaseChargerSpot(self):
-        charging_stations = tcp_communication.getVariable("charging_stations")
-        if charging_stations is not None and charging_stations != "ERROR":
-            current_free_spots = (charging_stations["station" + str(self.charger)])['free_spots']
-
-            resp = tcp_communication.setVariable("charging_stations/station" + str(self.charger) + "/free_spots", current_free_spots+1)
-            if resp:
-                rospy.loginfo("[Charing Control Node] Released spot in charger " + str(self.charger))
-        else:
-            rospy.loginfo("[Charing Control Node] ERROR in TCP communication!")
-
-
-    def reserveChargerSpot(self):
-        charging_stations = tcp_communication.getVariable("charging_stations")
-        if charging_stations is not None and charging_stations != "ERROR":
-            # Obtain the one with most free spots
-            max_free_spots = 0
-            for el in charging_stations:
-                if (charging_stations[el])['operational'] and (charging_stations[el])['free_spots'] > max_free_spots:
-                    max_free_spots = (charging_stations[el])['free_spots']
-                    rospy.set_param("/maintenance_charger", (charging_stations[el])['id'])
-                    self.charger = (charging_stations[el])['id']
-            if max_free_spots == 0:
-                rospy.loginfo("[Charing Control Node] WARNING: NO FREE CHARGING SPOTS AVAILABLE")
-                return
-            resp = tcp_communication.setVariable("charging_stations/station" + str(self.charger) + "/free_spots", max_free_spots-1)
-            if resp:
-                rospy.loginfo("[Charing Control Node] Reserved spot in charger " + str(self.charger))
-        else:
-            rospy.loginfo("[Charing Control Node] ERROR in TCP communication!")
 
 
     ##### END internal functions #####
@@ -213,7 +262,7 @@ class ChargingControlNode(object):
     def onShutdown(self):
         rospy.loginfo("[Charging Control Node] Shutdown.")
         if self.maintenance_state == "CHARGING":
-            self.releaseChargerSpot()
+            #self.releaseChargerSpot()
             rospy.loginfo("[Charging Control Node] RELEASED CHARGER SPOT. PLEASE REMOVE DUCKIEBOT FROM CHARGER!!!")
 
     ##### END standard functions #####

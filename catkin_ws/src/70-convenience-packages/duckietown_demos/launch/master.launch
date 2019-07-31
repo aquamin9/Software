@@ -546,6 +546,8 @@
 		<!--remap from="simple_coordinator_node/change_color_pattern" to="led_emitter_node/change_color_pattern" /-->
 		<remap from="coordinator_node/path_computed" to="intersection_navigation_node/path_computed" />
 		<remap from="coordinator_node/maintenance_state" to="maintenance_control_node/maintenance_state"/>
+		<remap from="coordinator_node/timer_off" to="maintenance_control_node/timer_off"/>
+
 		<include file="$(find explicit_coordinator)/launch/coordination_ETHZ17.launch">
 			<arg name="veh" value="$(arg veh)"/>
 			<arg name="config" value="$(arg config)"/>
@@ -765,6 +767,10 @@
 	<remap from="maintenance_control_node/turn_type" to="intersection_navigation_node/turn_type"/>
 	<remap from="maintenance_control_node/intersection_done" to="intersection_navigation_node/intersection_done"/>
 	<remap from="maintenance_control_node/intersection_done_detailed" to="intersection_navigation_node/intersection_done_detailed"/>
+	<remap from="maintenance_control_node/trafficlight_frequency" to="led_detector_node/trafficlight_frequency"/>
+	<remap from="maintenance_control_node/apriltags_out" to="apriltags_postprocessing_node/apriltags_out"/>
+	<remap from="maintenance_control_node/fsm_state" to="fsm_node/mode"/>
+	<remap from="maintenance_control_node/vehicle_detected" to="vehicle_detection_node/detection"/>
 
 	<include file="$(find maintenance_control)/launch/maintenance_control_node.launch">
 		<arg name="veh" value="$(arg veh)"/>
@@ -804,6 +810,8 @@
 	<remap from="charging_control_node/maintenance_state" to="maintenance_control_node/maintenance_state"/>
 	<remap from="charging_control_node/go_charging" to="maintenance_control_node/go_charging"/>
 	<remap from="charging_control_node/at_stop_line" to="stop_line_filter_node/at_stop_line"/>
+	<remap from="charging_control_node/car_cmd" to="car_cmd_switch_node/cmd"/>
+	<remap from="charging_control_node/vehicle_detected" to="vehicle_detection_node/detection"/>
 
 	<remap from="charging_control_node/intersection_done" to="intersection_navigation_node/intersection_done"/>
 	<remap from="charging_control_node/intersection_done_detailed" to="intersection_navigation_node/intersection_done_detailed"/>

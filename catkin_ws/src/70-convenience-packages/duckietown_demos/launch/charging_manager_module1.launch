@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<launch>
+
+	<include file="$(find charging_manager_module1)/launch/charging_manager_node.launch">
+		
+	</include>
+
+</launch>

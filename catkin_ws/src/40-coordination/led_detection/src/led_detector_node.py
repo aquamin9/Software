@@ -4,7 +4,7 @@ import time
 from led_detection.LEDDetector import LEDDetector
 from std_msgs.msg import Byte
 from duckietown_msgs.msg import Vector2D, LEDDetection, LEDDetectionArray, LEDDetectionDebugInfo, BoolStamped, SignalsDetection
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import CompressedImage, Image, Float32
 from std_msgs.msg import String
 from duckietown_utils.bag_logs import numpy_from_ros_compressed
 import numpy as np
@@ -86,6 +86,7 @@ class LEDDetectorNode(object):
         self.pub_image_TL       = rospy.Publisher("~image_detection_TL", Image, queue_size=1)
         self.pub_detections     = rospy.Publisher("~led_detection", SignalsDetection, queue_size=1)
         self.pub_debug          = rospy.Publisher("~debug_info",LEDDetectionDebugInfo,queue_size=1)
+        self.pub_trafficlight_frequency = rospy.Publisher("~trafficlight_frequency", Float32, queue_size = 1)
         self.veh_name           = rospy.get_namespace().strip("/")
 
         # Subscribed
@@ -412,6 +413,9 @@ class LEDDetectorNode(object):
             #rospy.loginfo('[%s] Detection of the traffic light' % (self.node_name))
             # Detection
             detected, result,freq_identified, fft_peak_freq  = self.detect_blob(BlobsTL[i],T,NIm,H,W,self.cropNormalizedTL,timestamps,result)
+
+            tl_freq = freq_identified * 1.0
+            self.pub_trafficlight_frequency.publish(tl_freq)
             # Take decision
             if detected:
                 self.traffic_light = SignalsDetection.GO
@@ -465,9 +469,9 @@ class LEDDetectorNode(object):
 
     def publish(self,imRight,imFront,imTL,results):
         #  Publish image with circles
-        imRightCircle_msg = self.bridge.cv2_to_imgmsg(imRight,encoding="passthrough")
-        imFrontCircle_msg = self.bridge.cv2_to_imgmsg(imFront,encoding="passthrough")
-        imTLCircle_msg    = self.bridge.cv2_to_imgmsg(imTL,encoding="passthrough")
+        imRightCircle_msg = self.bridge.cv2_to_imgmsg(imRight,encoding="rgb8")
+        imFrontCircle_msg = self.bridge.cv2_to_imgmsg(imFront,encoding="rgb8")
+        imTLCircle_msg    = self.bridge.cv2_to_imgmsg(imTL,encoding="rgb8")
 
         # Publish image
         self.pub_image_right.publish(imRightCircle_msg)

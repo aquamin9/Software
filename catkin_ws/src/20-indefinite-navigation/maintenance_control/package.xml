@@ -5,7 +5,8 @@
   <description>TODO: Add a description of package `maintenance_control` in `package.xml`.</description>
 
   <maintainer email="jkindle@ethz.ch">Julien Kindle</maintainer>
-
+  <maintainer email="andera@ethz.ch">Ali Ander</maintainer>
+  <maintainer email="zaluskat@ethz.ch">Tomasz Zaluska</maintainer>
 
   <license>GPLv3</license>
 

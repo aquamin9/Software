@@ -1,0 +1,14 @@
+bookkeeping_time: 1.0
+charger1_capacity: 5
+charger2_capacity: 5
+charger3_capacity: 5
+charger4_capacity: 5
+debug_time: 7.0
+direction1: 1
+direction1_tag: '389'
+direction2: 3
+direction2_tag: '236'
+entrance: '342'
+exit: '191'
+threshold: 5.0
+updateChargerSizeTime: 5.0

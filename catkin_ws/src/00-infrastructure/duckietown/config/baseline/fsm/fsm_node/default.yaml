@@ -34,6 +34,16 @@ events: # Maps from subscribing topic to signal ids
     msg_type: "BoolStamped"
     trigger: True
 
+  charging_stop_tag_seen:
+    topic: "maintenance_control_node/charging_stop_tag_seen"
+    msg_type: "BoolStamped"
+    trigger: True
+
+  vehicle_not_seen:
+    topic: "maintenance_control_node/vehicle_not_seen"
+    msg_type: "BoolStamped"
+    trigger: True
+
   in_charger:
     topic: "maintenance_control_node/in_charger"
     msg_type: "BoolStamped"
@@ -97,8 +107,24 @@ events: # Maps from subscribing topic to signal ids
     msg_type: "BoolStamped"
     trigger: True
 
-  at_stop_line_and_charging_exit:
-    topic: "logic_gate_node/at_stop_line_and_charging_exit"
+
+  at_stop_line_and_charging_exit_and_not_vehicle_seen:
+    topic: "logic_gate_node/at_stop_line_and_charging_exit_and_not_vehicle_seen"
+    msg_type: "BoolStamped"
+    trigger: True
+
+  at_stop_line_and_charging_stop_tag_seen:
+    topic: "logic_gate_node/at_stop_line_and_charging_stop_tag_seen"
+    msg_type: "BoolStamped"
+    trigger: True
+
+  timer_off:
+    topic: "maintenance_control_node/timer_off"
+    msg_type: "BoolStamped"
+    trigger: True
+
+  at_MT_intersection:
+    topic: "coordinator_node/at_MT_intersection"
     msg_type: "BoolStamped"
     trigger: True
 
@@ -209,6 +235,7 @@ states:
       - stop_line_filter_node
     lights: ["joystick"]
     current_status: "implemented"
+
   LANE_FOLLOWING:
     transitions:
       at_stop_line_and_parking_off: "INTERSECTION_COORDINATION"
@@ -233,6 +260,14 @@ states:
       - charging_control
     lights: ["lane_following"]
     current_status: "in_progress"
+  WAIT:
+    transitions:
+      timer_off: "INTERSECTION_COORDINATION"
+
+    active_nodes:
+      - led_detector_node
+      - framerate_high
+      - coordinator_node
 
   # INTERSECTION_PLANNING:
   #   transitions:
@@ -250,6 +285,8 @@ states:
   INTERSECTION_COORDINATION:
     transitions:
       intersection_go: "INTERSECTION_CONTROL"
+      at_MT_intersection: "WAIT"
+
     active_nodes:
       - apriltag_node #NOTE
       - lane_filter_node
@@ -264,6 +301,7 @@ states:
       - unicorn_intersection_node
     lights: ["coordination"]
     current_status: "in_progress"
+
   INTERSECTION_CONTROL:
     transitions:
       intersection_done_and_deep_lane_off: "LANE_FOLLOWING"
@@ -287,8 +325,10 @@ states:
 
   IN_CHARGING_AREA:
     transitions:
-      at_stop_line_and_parking_off: "CHARGING_FIRST_IN_LINE"
-      at_stop_line_and_parking_on: "CHARGING_FIRST_IN_LINE"
+      #at_stop_line_and_parking_off: "CHARGING_FIRST_IN_LINE"
+      #at_stop_line_and_parking_on: "CHARGING_FIRST_IN_LINE"
+      at_stop_line_and_charging_stop_tag_seen: "CHARGING_FIRST_IN_LINE"
+
     active_nodes:
       - decoder_node
       - line_detector_node
@@ -304,7 +344,7 @@ states:
 
   CHARGING_FIRST_IN_LINE:
     transitions:
-      at_stop_line_and_charging_exit: "LANE_FOLLOWING"
+      at_stop_line_and_charging_exit_and_not_vehicle_seen: "LANE_FOLLOWING"
     active_nodes:
       - decoder_node
       - line_detector_node
